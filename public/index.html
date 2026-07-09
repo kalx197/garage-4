@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Garage Asset Deployment</title>
+    <style>
+        :root { --primary: #2563eb; --danger: #dc2626; --bg: #f8fafc; --panel: #ffffff; --text: #1e293b; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 40px; }
+        .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; max-width: 1200px; margin: 0 auto; }
+        .card { background: var(--panel); border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; padding-bottom: 12px; border-bottom: 2px solid #f1f5f9; font-size: 1.4rem; }
+        .flex-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
+        button { background: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        button.danger { background: var(--danger); }
+        button.action-btn { padding: 6px 12px; margin-left: 4px; }
+        .meta-text { font-size: 0.85rem; color: #64748b; margin-top: 2px; }
+        .data-badge { background: #e2e8f0; padding: 4px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<h1 style="text-align: center; margin-bottom: 40px; font-weight: 800;">Garage Logistics & Inventory Management</h1>
+
+<div class="dashboard-grid">
+    <div class="card">
+        <h2>Physical Shelf Inventory</h2>
+        <div id="inventory-mount"></div>
+    </div>
+
+    <div class="card">
+        <h2>Atomic Staging Buffer (Cart)</h2>
+        <div id="cart-mount"></div>
+        <div style="margin-top: 24px; display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+            <button onclick="executeCheckout()" style="background: #16a34a;">Commit Checkout Block</button>
+            <button onclick="purgeStagingArea()" class="danger">Purge</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function syncStateEngine() {
+        const response = await fetch('/api/inventory/status');
+        const data = await response.json();
+
+        const invMount = document.getElementById('inventory-mount');
+        invMount.innerHTML = '';
+        data.inventory.forEach(item => {
+            invMount.innerHTML += `
+                <div class="flex-row">
+                    <div>
+                        <div style="font-weight: 600;">${item.name}</div>
+                        <div class="meta-text">Zone: ${item.location}</div>
+                    </div>
+                    <div>
+                        <span class="data-badge" style="margin-right:8px;">Qty: ${item.quantity}</span>
+                        <button class="action-btn" onclick="mutateStock(${item.id}, 'add')">+</button>
+                        <button class="action-btn danger" onclick="mutateStock(${item.id}, 'subtract')">-</button>
+                        <button class="action-btn" onclick="stageItem(${item.id})" style="background:#475569; margin-left:8px;">Stage</button>
+                    </div>
+                </div>`;
+        });
+
+        const cartMount = document.getElementById('cart-mount');
+        cartMount.innerHTML = '';
+        if(data.cart.length === 0) {
+            cartMount.innerHTML = `<p style="color:#94a3b8; text-align:center; padding: 20px 0;">Staging buffer evaluated as empty.</p>`;
+        } else {
+            data.cart.forEach(item => {
+                cartMount.innerHTML += `
+                    <div class="flex-row">
+                        <span style="font-weight: 500;">${item.name}</span>
+                        <span class="data-badge" style="background:#2563eb; color:white;">Allocated: ${item.quantity}</span>
+                    </div>`;
+            });
+        }
+    }
+
+    async function mutateStock(id, action) {
+        const res = await fetch(`/api/inventory/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, amount: 1 })
+        });
+        if (!res.ok) { const err = await res.json(); alert(err.error); }
+        syncStateEngine();
+    }
+
+    async function stageItem(itemId) {
+        const res = await fetch('/api/cart/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId, quantity: 1 })
+        });
+        if (!res.ok) { const err = await res.json(); alert(err.error); }
+        syncStateEngine();
+    }
+
+    async function executeCheckout() {
+        const res = await fetch('/api/cart/checkout', { method: 'POST' });
+        if (!res.ok) { const err = await res.json(); alert(err.error); }
+        syncStateEngine();
+    }
+
+    async function purgeStagingArea() {
+        await fetch('/api/cart/clear', { method: 'POST' });
+        syncStateEngine();
+    }
+
+    // Initialize application runtime
+    document.addEventListener('DOMContentLoaded', syncStateEngine);
+</script>
+</body>
+</html>
